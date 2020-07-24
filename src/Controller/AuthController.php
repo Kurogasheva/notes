@@ -14,9 +14,12 @@ use Symfony\Component\Security\Core\User\UserInterface;
 
 class AuthController extends ApiController
 {
+    /**
+     * @Route("/register", name="register", methods={"POST"})
+     */
     public function register(Request $request, UserPasswordEncoderInterface $encoder)
     {
-        $em = $this->getDoctrine()->getManager();
+        $entityManager = $this->getDoctrine()->getManager();
         $request = $this->transformJsonBody($request);
         $password = $request->get('password');
         $email = $request->get('email');
@@ -28,12 +31,13 @@ class AuthController extends ApiController
         $user = new User();
         $user->setPassword($encoder->encodePassword($user, $password));
         $user->setEmail($email);
-        $em->persist($user);
-        $em->flush();
+        $entityManager->persist($user);
+        $entityManager->flush();
         return $this->respondWithSuccess(sprintf('User %s successfully created', $user->getEmail()));
     }
 
     /**
+     * @Route("/api/login_check", name="login", methods={"POST"})
      * @param UserInterface $user
      * @param JWTTokenManagerInterface $JWTManager
      * @return JsonResponse
