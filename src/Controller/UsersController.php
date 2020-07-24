@@ -9,17 +9,16 @@ use Symfony\Component\HttpFoundation\Request;
 use App\Entity\Note;
 use App\Entity\User;
 
-class NotesController extends AbstractController
+class UsersController extends AbstractController
 {
     /**
-     * @Route("/api/notes", name="notes", methods={"POST"})
+     * @Route("/notes", name="notes")
      */
     public function index()
     {
-        // return $this->render('notes/index.html.twig', [
-        //     'controller_name' => 'NotesController',
-        // ]);
-        return $this->json(['id' => 1]);
+        return $this->render('notes/index.html.twig', [
+            'controller_name' => 'NotesController',
+        ]);
     }
 
     /**
