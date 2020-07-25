@@ -7,6 +7,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
+use App\Repository\NoteRepository;
 use App\Entity\Note;
 use App\Entity\User;
 
@@ -50,12 +51,14 @@ class NotesController extends ApiController
     }
 
     /**
-     * @Route("/api/note", methods={"POST"})
+     * @Route("/api/getNotes", methods={"POST"})
      */
     public function getNotesByUser() 
     {
         $user = $this->get('security.token_storage')->getToken()->getUser();
-        $notesObjects = $user->getNotes()->toArray();
+        $notesObjects = $this->getDoctrine()
+            ->getRepository(Note::class)
+            ->findByUserid($user);
         foreach ($notesObjects as $key => $note) {
             $notes[$key]['id'] = $note->getId();
             $notes[$key]['body'] = $note->getBody();
