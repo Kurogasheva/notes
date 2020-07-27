@@ -98,6 +98,18 @@ class ApiController extends AbstractController
     }
 
     /**
+     * Returns a 500 Internal Server Error
+     *
+     * @param string $message
+     *
+     * @return JsonResponse
+     */
+    public function respondError($message = '')
+    {
+        return $this->setStatusCode(500)->respondWithErrors($message);
+    }
+
+    /**
      * Returns a 422 Unprocessable Entity
      *
      * @param string $message

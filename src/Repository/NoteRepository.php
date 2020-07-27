@@ -22,27 +22,38 @@ class NoteRepository extends ServiceEntityRepository
     /**
      * @return Note[] Returns an array of Note objects
      */
-    public function findByUserId($user)
+    public function findByUser($user)
     {
         return $this->createQueryBuilder('n')
             ->andWhere('n.user = :user')
             ->setParameter('user', $user)
-            ->orderBy('n.user', 'ASC')
+            ->orderBy('n.id', 'ASC')
             ->setMaxResults(10)
             ->getQuery()
             ->getResult()
         ;
     }
 
-    /*
-    public function findOneBySomeField($value): ?Note
+    public function findById($user, $id): ?Note
     {
         return $this->createQueryBuilder('n')
-            ->andWhere('n.exampleField = :val')
-            ->setParameter('val', $value)
+            ->andWhere('n.user = :user')
+            ->andWhere('n.id = :id')
+            ->setParameter('user', $user)
+            ->setParameter('id', $id)
             ->getQuery()
             ->getOneOrNullResult()
         ;
     }
-    */
+
+    public function delByUser($user)
+    {
+        return $this->createQueryBuilder('n')
+            ->delete()
+            ->andWhere('n.user = :user')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getResult()
+        ;
+    }
 }

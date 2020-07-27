@@ -19,32 +19,53 @@ class TagRepository extends ServiceEntityRepository
         parent::__construct($registry, Tag::class);
     }
 
-    // /**
-    //  * @return Tag[] Returns an array of Tag objects
-    //  */
-    /*
-    public function findByExampleField($value)
+    /**
+     * @return Tag[] Returns an array of Tag objects
+     */
+    public function findByUser($user)
     {
         return $this->createQueryBuilder('t')
-            ->andWhere('t.exampleField = :val')
-            ->setParameter('val', $value)
+            ->andWhere('t.user = :user')
+            ->setParameter('user', $user)
             ->orderBy('t.id', 'ASC')
             ->setMaxResults(10)
             ->getQuery()
             ->getResult()
         ;
     }
-    */
 
-    /*
-    public function findOneBySomeField($value): ?Tag
+    public function findById($user, $id): ?Tag
     {
         return $this->createQueryBuilder('t')
-            ->andWhere('t.exampleField = :val')
-            ->setParameter('val', $value)
+            ->andWhere('t.user = :user')
+            ->andWhere('t.id = :id')
+            ->setParameter('user', $user)
+            ->setParameter('id', $id)
             ->getQuery()
             ->getOneOrNullResult()
         ;
     }
-    */
+
+    public function findByBody($user, $body): ?Tag
+    {
+        return $this->createQueryBuilder('t')
+            ->andWhere('t.user = :user')
+            ->andWhere('t.body = :body')
+            ->setParameter('user', $user)
+            ->setParameter('body', $body)
+            ->getQuery()
+            ->getOneOrNullResult()
+        ;
+    }
+
+    public function delByUser($user)
+    {
+        return $this->createQueryBuilder('t')
+            ->delete()
+            ->andWhere('t.user = :user')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getResult()
+        ;
+    }
 }
