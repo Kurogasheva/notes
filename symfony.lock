@@ -84,6 +84,9 @@
     "egulias/email-validator": {
         "version": "2.1.18"
     },
+    "gesdinet/jwt-refresh-token-bundle": {
+        "version": "v0.9.1"
+    },
     "lcobucci/jwt": {
         "version": "3.3.2"
     },

@@ -14,6 +14,7 @@ use App\Repository\TagRepository;
 use App\Entity\Note;
 use App\Entity\User;
 use App\Entity\Tag;
+use Datetime;
 
 class NotesController extends ApiController
 {
@@ -23,7 +24,7 @@ class NotesController extends ApiController
         foreach ($objects as $key => $note) {
             $notes[$key]['id'] = $note->getId();
             $notes[$key]['body'] = $note->getBody();
-
+            $notes[$key]['created_at'] = $note->getCreatedAt()->format('Y-m-d\ H:i:s');
             foreach($note->getTags() as $keyTag => $tag){
                 $notes[$key]['tags'][$keyTag]['id'] =  $tag->getId();
                 $notes[$key]['tags'][$keyTag]['body'] = $tag->getBody();
@@ -91,9 +92,11 @@ class NotesController extends ApiController
                 $note->addTag($result['tag']);
             }
         }
-        
+        $time = new Datetime();
         $note->setBody($request->get('body'))
-            ->setUser($user);
+            ->setUser($user)
+            ->setCreatedAt($time->setTimestamp(time()))
+        ;
 
         $entityManager->persist($note);
         $entityManager->flush();
