@@ -11,10 +11,13 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use App\Repository\NoteRepository;
 use App\Repository\TagRepository;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use App\Entity\Note;
 use App\Entity\User;
 use App\Entity\Tag;
 use Datetime;
+use Doctrine\ORM\Tools\Pagination\Paginator;
 
 class NotesController extends ApiController
 {
@@ -33,70 +36,68 @@ class NotesController extends ApiController
         return $notes;
     }
 
-    protected function isTag($tagId) 
+    private function paginate($qb, $page = 1, $q = 100, $join = true)
     {
-        if (!(is_int($tagId))) {     
-            return ['success' => false, 'error' => 'Invalid tag id'];
-        }  
+        $firstResult = ($page - 1) * $q;
+        $query = $qb->setFirstResult($firstResult)
+                    ->setMaxResults($q + $firstResult);
+        
+        $paginator = new Paginator($query, $fetchJoinCollection = $join);
 
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-        $tag = $this->getDoctrine()->getRepository(Tag::class)->findById($user, $tagId);
-
-        if ($tag === null) {
-            return ['success' => false, 'error' => 'User does not have this tag: ' . $tagId];
-        }
-        return ['success' => true, 'tag' => $tag];
+        return $paginator->getQuery()->getResult();
     }
 
-    protected function isNote($noteId) 
+    private function isEntity($id, $repository, $user) 
     {
-        if (!(is_int($noteId))) {     
-            return ['success' => false, 'error' => 'Invalid note id'];
+        if (!(is_int($id))) {     
+            return ['success' => false, 'error' => 'Invalid id'];
         }  
 
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-        $note = $this->getDoctrine()->getRepository(Note::class)->findById($user, $noteId);
+        $ent = $repository->findById($user, $id);
 
-        if ($note === null) {
-            return ['success' => false, 'error' => 'User does not have this note: ' . $noteId];
+        if ($ent === null) {
+            return ['success' => false, 'error' => 'User does not have: ' . $tagId];
         }
-        return ['success' => true, 'note' => $note];
+        return ['success' => true, 'entity' => $ent];
     }
 
     /**
      * @Route("/api/set-note", methods={"POST"})
      */
-    public function setNote(Request $request) 
+    public function setNote(
+        Request $request, 
+        UserInterface $user, 
+        EntityManagerInterface $entityManager, 
+        TagRepository $repository
+    ) 
     {
         $request = $this->transformJsonBody($request);
 
         if (empty($request->get('body'))) {
             return $this->respondError('Invalid body');
         }
-        
-        $entityManager = $this->getDoctrine()->getManager();
 
-        $user = $this->get('security.token_storage')->getToken()->getUser();
         $note = new Note();
 
         $tagsId = $request->get('tags');
         if (! empty($tagsId)) {
+
             if (!is_array($tagsId)) {
                 return $this->respondError('tags have to be array');
             }
+
             foreach($tagsId as $id) {
-                $result = $this->isTag($id);
+                $result = $this->isEntity($id, $repository, $user);
                 if (!$result['success']) {
-                    return $this->respondError($result['error']);
+                    return $this->respondError('Tag error: ' . $result['error']);
                 }
-                $note->addTag($result['tag']);
+                $note->addTag($result['entity']);
             }
         }
         $time = new Datetime();
         $note->setBody($request->get('body'))
             ->setUser($user)
-            ->setCreatedAt($time->setTimestamp(time()))
-        ;
+            ->setCreatedAt($time->setTimestamp(time()));
 
         $entityManager->persist($note);
         $entityManager->flush();
@@ -107,74 +108,91 @@ class NotesController extends ApiController
     /**
      * @Route("/api/get-notes", methods={"POST"})
      */
-    public function getNotes() 
+    public function getNotes(Request $request, UserInterface $user, NoteRepository $repository) 
     {
-        $user = $this->get('security.token_storage')->getToken()->getUser();
+        $request = $this->transformJsonBody($request);
+        $q = $request->get('q') ?? 10;
+        $page = $request->get('page') ?? 1;
+        $pagination = $this->paginate($repository->getQB($user), $page, $q, false);
 
-        $notesObjects = $this->getDoctrine()->getRepository(Note::class)->findByUser($user);
+        return new JsonResponse(['notes' => $this->getArrayFromObjects($pagination)]);
+    }
 
-        return new JsonResponse(['notes' => $this->getArrayFromObjects($notesObjects)]);
+    /**
+     * @Route("/api/get-count-of-notes", methods={"POST"})
+     */
+    public function getCountOfNotes(UserInterface $user, NoteRepository $repository) 
+    {
+        return new JsonResponse(['count of notes' => $repository->getCountByUser($user)]);
     }
 
     /**
      * @Route("/api/get-notes-by-tag", methods={"POST"})
      */
-    public function getNotesByTag(Request $request) 
+    public function getNotesByTag(
+        Request $request, 
+        UserInterface $user, 
+        NoteRepository $noteRepository,
+        TagRepository $tagRepository
+    ) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $q = $request->get('q') ?? 10;
+        $page = $request->get('page') ?? 1;
+
+        $result = $this->isEntity($request->get('tag'), $tagRepository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Tag error: ' . $result['error']);
         }  
-
-        $notesObjects = $result['tag']->getNotes();
-
-        return new JsonResponse(['notes' => $this->getArrayFromObjects($notesObjects)]);
+        $qb = $noteRepository->getByTagQB($result['entity']->getId());
+        $pagination = $this->paginate($qb, $page, $q);
+        return new JsonResponse(['notes' => $this->getArrayFromObjects($pagination)]);
     }
 
     /**
      * @Route("/api/get-note", methods={"POST"})
      */
-    public function getNote(Request $request) 
+    public function getNote(Request $request, NoteRepository $repository) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isNote($request->get('note'));
+        $result = $this->isEntity($request->get('note'), $repository);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Note error: ' . $result['error']);
         }  
 
-        return new JsonResponse(['note' => $this->getArrayFromObjects([$result['note']])[0]]);
+        return new JsonResponse(['note' => $this->getArrayFromObjects([$result['entity']])[0]]);
     }
 
     /**
      * @Route("/api/del-note", methods={"POST"})
      */
-    public function delNote(Request $request) 
+    public function delNote(
+        Request $request, 
+        EntityManagerInterface $entityManager, 
+        NoteRepository $repository
+    ) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isNote($request->get('note'));
+        $result = $this->isEntity($request->get('note'), $repository);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Note error: ' . $result['error']);
         } 
 
-        $entityManager = $this->getDoctrine()->getManager();
-        $entityManager->remove($result['note']);
+        $entityManager->remove($result['entity']);
         $entityManager->flush();
 
         return $this->respondWithSuccess(sprintf('Note successfully deleted'));
     }
 
     /**
-     * @Route("/api/del-notes-by-user", methods={"POST"})
+     * @Route("/api/del-notes", methods={"POST"})
      */
-    public function delNotes() 
+    public function delNotes(NoteRepository $repository, UserInterface $user) 
     {
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-
-        $del = $this->getDoctrine()->getRepository(Note::class)->delByUser($user);
+        $del = $repository->delByUser($user);
         
         return $this->respondWithSuccess(sprintf('%s notes successfully deleted', $del));
     }
@@ -182,44 +200,53 @@ class NotesController extends ApiController
     /**
      * @Route("/api/del-notes-by-tag", methods={"POST"})
      */
-    public function delNotesByTag(Request $request) 
+    public function delNotesByTag(
+        Request $request, 
+        TagRepository $tagRepository,
+        NoteRepository $noteRepository, 
+        UserInterface $user 
+    )
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $result = $this->isEntity($request->get('tag'), $tagRepository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Tag error: ' . $result['error']);
         }  
 
-        $notes = $result['tag']->getNotes();
-        $entityManager = $this->getDoctrine()->getManager();
+        $count = $noteRepository->getCountByTag($result['entity']->getId());
+        $qb = $noteRepository->getByTagQB($result['entity']->getId());
         
-        foreach ($notes as $key => $note) {
-            $entityManager->remove($note);
+        for ($i = 0; $i <= ceil($count / 100); $i++) {
+            $pagination = $this->paginate($qb, $i + 1, 100);
+            $noteRepository->delByIds($pagination);
         }
-
-        $entityManager->flush();
         
-        return $this->respondWithSuccess(sprintf('Notes successfully deleted'));
+        return $this->respondWithSuccess(sprintf('notes successfully deleted'));
     }
 
     /**
      * @Route("/api/change-note-body", methods={"POST"})
      */
-    public function changeNoteBody(Request $request) 
+    public function changeNoteBody(
+        Request $request, 
+        EntityManagerInterface $entityManager, 
+        NoteRepository $repository,
+        UserInterface $user
+    ) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isNote($request->get('note'));
+        $result = $this->isEntity($request->get('note'), $repository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Note error: ' . $result['error']);
         }  
         $body = $request->get('body');
+        
         if (empty($body)) {
             return $this->respondError('body is empty');
         }
-        $entityManager = $this->getDoctrine()->getManager();
-        $result['note']->setBody($body);
+        $result['entity']->setBody($body);
         $entityManager->flush();
         
         return $this->respondWithSuccess(sprintf('Note successfully updated'));
@@ -228,58 +255,67 @@ class NotesController extends ApiController
     /**
      * @Route("/api/add-tag-to-note", methods={"POST"})
      */
-    public function addTagToNote(Request $request) 
+    public function addTagToNote(
+        Request $request, 
+        EntityManagerInterface $entityManager, 
+        NoteRepository $NoteRepository, 
+        TagRepository $TagRepository,
+        UserInterface $user 
+    ) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $resultTag = $this->isEntity($request->get('tag'), $TagRepository, $user);
 
-        if (!$result['success']) {
-            return $this->respondError($result['error']);
+        if (!$resultTag['success']) {
+            return $this->respondError('Tag error: ' . $result['error']);
         }
 
-        $result = array_merge($result, $this->isNote($request->get('note')));
+        $resultNote = $this->isEntity($request->get('note'), $NoteRepository, $user);
         
-        if (!$result['success']) {
-            return $this->respondError($result['error']);
+        if (!$resultNote['success']) {
+            return $this->respondError('Note error: ' . $result['error']);
         }
 
-        if ($result['note']->getTags()->contains($result["tag"])) {
+        if ($resultNote['entity']->getTags()->contains($resultTag['entity'])) {
             return $this->respondError('This note already has this tag');
         }
 
-        $entityManager = $this->getDoctrine()->getManager();
-        $result['note']->addTag($result['tag']);
+        $resultNote['entity']->addTag($resultTag['entity']);
         $entityManager->flush();
 
-        return $this->respondWithSuccess(sprintf('Note %s successfully updated', $result['note']->getId()));
+        return $this->respondWithSuccess(sprintf('Note %s successfully updated', $resultNote['entity']->getId()));
     }
 
     /**
      * @Route("/api/del-tag-from-note", methods={"POST"})
      */
-    public function delTagFromNote(Request $request) 
+    public function delTagFromNote(
+        Request $request, 
+        EntityManagerInterface $entityManager, 
+        NoteRepository $NoteRepository, 
+        TagRepository $TagRepository,
+        UserInterface $user 
+    ) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $resultTag = $this->isEntity($request->get('tag'), $TagRepository, $user);
 
-        if (!$result['success']) {
-            return $this->respondError($result['error']);
+        if (!$resultTag['success']) {
+            return $this->respondError('Tag error: ' . $result['error']);
         }
 
-        $result = array_merge($result, $this->isNote($request->get('note')));
-
-        if (!$result['success']) {
-            return $this->respondError($result['error']);
+        $resultNote = $this->isEntity($request->get('note'), $NoteRepository, $user);
+        
+        if (!$resultNote['success']) {
+            return $this->respondError('Note error: ' . $result['error']);
         }
 
-        if (!$result['note']->getTags()->contains($result["tag"])) {
+        if (!$resultNote['entity']->getTags()->contains($resultTag['entity'])) {
             return $this->respondError('This note has not this tag');
         }
-        
-        $entityManager = $this->getDoctrine()->getManager();
-        $result['note']->removeTag($result['tag']);
+        $resultNote['entity']->removeTag($resultTag['entity']);
         $entityManager->flush();
 
-        return $this->respondWithSuccess(sprintf('Note %s successfully updated', $result['note']->getId()));
+        return $this->respondWithSuccess(sprintf('Note %s successfully updated', $resultNote['entity']->getId()));
     }
 }

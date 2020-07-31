@@ -11,30 +11,37 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use App\Repository\NoteRepository;
 use App\Repository\TagRepository;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use App\Entity\Note;
 use App\Entity\User;
 use App\Entity\Tag;
 
 class TagsController extends ApiController
 {
-    protected function isTag($tagId) 
+    private function isEntity($id, $repository, UserInterface $user) 
     {
-        if (!(is_int($tagId))) {     
-            return ['success' => false, 'error' => 'Invalid tag id'];
+        if (!(is_int($id))) {     
+            return ['success' => false, 'error' => 'Invalid id'];
         }  
 
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-        $tag = $this->getDoctrine()->getRepository(Tag::class)->findById($user, $tagId);
+        $ent = $repository->findById($user, $id);
 
-        if ($tag === null) {
-            return ['success' => false, 'error' => 'User does not have this tag: ' . $tagId];
+        if ($ent === null) {
+            return ['success' => false, 'error' => 'User does not have: ' . $tagId];
         }
-        return ['success' => true, 'tag' => $tag];
+        return ['success' => true, 'entity' => $ent];
     }
+
     /**
      * @Route("/api/set-tag", methods={"POST"})
      */
-    public function setTag(Request $request) 
+    public function setTag(
+        Request $request, 
+        UserInterface $user, 
+        TagRepository $repository, 
+        EntityManagerInterface $entityManager
+    ) 
     {
         $request = $this->transformJsonBody($request);
         $body = $request->get('body');
@@ -43,13 +50,9 @@ class TagsController extends ApiController
             return $this->respondError('Invalid body');
         }
 
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-
-        if ($this->getDoctrine()->getRepository(Tag::class)->findByBody($user, $body) !== null) {
+        if ($repository->findByBody($user, $body) !== null) {
             return $this->respondError('This tag already exists');
         }
-
-        $entityManager = $this->getDoctrine()->getManager();
         
         $tag = new Tag();
         $tag->setBody($body)
@@ -65,11 +68,9 @@ class TagsController extends ApiController
     /**
      * @Route("/api/get-tags", methods={"POST"})
      */
-    public function getTags() 
+    public function getTags(UserInterface $user, TagRepository $repository) 
     {
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-
-        $tagsObjects = $this->getDoctrine()->getRepository(Tag::class)->findByUser($user);
+        $tagsObjects = $repository->findByUser($user);
         $tags = [];
         foreach ($tagsObjects as $key => $tag) {
             $tags[$key]['id'] = $tag->getId();
@@ -81,17 +82,17 @@ class TagsController extends ApiController
     /**
      * @Route("/api/get-tag", methods={"POST"})
      */
-    public function getTag(Request $request) 
+    public function getTag(Request $request, TagRepository $repository, UserInterface $user) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $result = $this->isEntity($request->get('tag'), $repository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Tag error: ' . $result['error']);
         }  
 
-        $tag = ['id' => $result['tag']->getId(),
-                'body' => $result['tag']->getBody(),
+        $tag = ['id' => $result['entity']->getId(),
+                'body' => $result['entity']->getBody(),
         ];
 
         return new JsonResponse(['tag' => $tag]);
@@ -100,17 +101,20 @@ class TagsController extends ApiController
     /**
      * @Route("/api/del-tag", methods={"POST"})
      */
-    public function delTag(Request $request) 
+    public function delTag(
+        Request $request, 
+        TagRepository $repository, 
+        EntityManagerInterface $entityManager,
+        UserInterface $user) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $result = $this->isEntity($request->get('tag'), $repository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Tag error: ' . $result['error']);
         } 
 
-        $entityManager = $this->getDoctrine()->getManager();
-        $entityManager->remove($result['tag']);
+        $entityManager->remove($result['entity']);
         $entityManager->flush();
 
         return $this->respondWithSuccess(sprintf('Tag successfully deleted'));
@@ -119,11 +123,9 @@ class TagsController extends ApiController
     /**
      * @Route("/api/del-tags", methods={"POST"})
      */
-    public function delTags() 
+    public function delTags(UserInterface $user, TagRepository $repository) 
     {
-        $user = $this->get('security.token_storage')->getToken()->getUser();
-
-        $del = $this->getDoctrine()->getRepository(Tag::class)->delByUser($user);
+        $del = $repository->delByUser($user);
         
         return $this->respondWithSuccess(sprintf('%s Tags successfully deleted', $del));
     }
@@ -131,20 +133,25 @@ class TagsController extends ApiController
     /**
      * @Route("/api/change-tag-body", methods={"POST"})
      */
-    public function changeTagBody(Request $request) 
+    public function changeTagBody(
+        Request $request, 
+        TagRepository $repository, 
+        EntityManagerInterface $entityManager,
+        UserInterface $user) 
     {
         $request = $this->transformJsonBody($request);
-        $result = $this->isTag($request->get('tag'));
+        $result = $this->isEntity($request->get('tag'), $repository, $user);
 
         if (!$result['success']) {     
-            return $this->respondError($result['error']);
+            return $this->respondError('Tag error: ' . $result['error']);
         }  
+
         $body = $request->get('body');
         if (empty($body)) {
             return $this->respondError('body is empty');
         }
-        $entityManager = $this->getDoctrine()->getManager();
-        $result['tag']->setBody($body);
+        
+        $result['entity']->setBody($body);
         $entityManager->flush();
         
         return $this->respondWithSuccess(sprintf('Tag successfully updated'));

@@ -58,4 +58,4 @@ class AuthController extends ApiController
         $refreshTokenManager->delete($refreshToken);
         return new JsonResponse(['token' => 'deleted']);
     }
- }
+}
